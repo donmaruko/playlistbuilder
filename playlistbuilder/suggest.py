@@ -1,10 +1,9 @@
 """suggest: propose new songs for a playlist from general music knowledge, learn from y/n."""
-import collections
 import json
 
 import anthropic
 
-from . import learn
+from . import learn, snapshot
 from .prompts import ask, ask_quit_choice
 from .spotify import add_tracks, fetch_tracks, get_playlist_id
 
@@ -12,11 +11,10 @@ MODEL = "claude-sonnet-5-5"
 
 
 def playlist_summary(existing):
-    counts = collections.Counter(t["artists"][0] for t in existing)
-    return json.dumps(counts.most_common())
+    return snapshot.summary(existing)
 
 
-def analyze(client, existing, profile):
+def analyze(client, existing, profile, drift=""):
     """Step 1: study the playlist as it stands, so suggestions respond to its current shape."""
     msg = client.messages.create(
         model=MODEL,
@@ -27,13 +25,14 @@ def analyze(client, existing, profile):
             "which genres and scenes are present (and roughly how heavily), the common thread "
             "running through them, and what is over- or under-represented. Then one sentence on "
             "what that implies for new recommendations.\n\n"
+            f"{drift}"
             f"Playlist artists (track counts): {playlist_summary(existing)}"
         )}],
     )
     return next(b.text for b in msg.content if b.type == "text").strip()
 
 
-def propose(client, existing, profile, n, analysis):
+def propose(client, existing, profile, n, analysis, drift=""):
     msg = client.messages.create(
         model=MODEL,
         max_tokens=16000,
@@ -43,7 +42,7 @@ def propose(client, existing, profile, n, analysis):
             "Draw on the whole breadth of music: other eras, scenes, countries, deep cuts, "
             "not just the obvious names. Pick the specific song that best represents the artist. "
             "One song per artist.\n\n"
-            f"Your analysis of the playlist as it stands:\n{analysis}\n\n"
+            f"Your analysis of the playlist as it stands:\n{analysis}\n\n{drift}"
             f"Playlist artists (track counts): {playlist_summary(existing)}\n"
             f"Confirmed fits (taste anchors): {json.dumps(profile.keep)}\n"
             f"Rejected, never suggest these artists: {json.dumps(profile.omit)}\n"
@@ -70,23 +69,29 @@ def run(sp, profile, playlist, n, create):
     have_artists = {a.lower() for t in existing for a in t["artists"]}
     ai = anthropic.Anthropic()
 
+    ch = snapshot.changes(snapshot.load(profile, pid), existing)
+    drift = snapshot.describe(ch)
+    if ch and (ch[0] or ch[1]):
+        print(f"Since the last run you added {len(ch[0])} and removed {len(ch[1])} tracks by hand; factoring that in.\n")
+
     sess = profile.load_session("suggest")
     if sess and sess["playlist"] == pid:
         if ask(f"Unfinished session: {len(sess['queue'])} suggestions left, {len(sess['events'])} answered. "
                "Resume it? [y=resume/n=drop it and start fresh] ", ("y", "n")) == "y":
             queue, events, accepted = sess["queue"], sess["events"], sess["accepted"]
-            print(f"What I saw in the playlist:\n{sess['analysis']}\n")
+            events += snapshot.events(ch)
+            analysis = analyze(ai, existing, profile, drift)
+            print(f"What I see in the playlist now:\n{analysis}\n")
         else:
             profile.clear_session("suggest")
             sess = None
     else:
         sess = None
     if not sess:
-        analysis = analyze(ai, existing, profile)
+        analysis = analyze(ai, existing, profile, drift)
         print(f"What I see in the playlist:\n{analysis}\n")
-        queue, events, accepted = propose(ai, existing, profile, n, analysis), [], []
-    else:
-        analysis = sess["analysis"]
+        queue, events, accepted = propose(ai, existing, profile, n, analysis, drift), [], []
+        events += snapshot.events(ch)
 
     finished = True
     while queue:
@@ -115,7 +120,8 @@ def run(sp, profile, playlist, n, create):
 
     if not finished:
         profile.save_session("suggest", {"playlist": pid, "queue": queue, "events": events,
-                                         "accepted": accepted, "analysis": analysis})
+                                         "accepted": accepted})
+        snapshot.save(profile, pid, fetch_tracks(sp, pid))
         print("Session saved. Run the same command again to pick up where you left off.")
         return
 
@@ -126,4 +132,5 @@ def run(sp, profile, playlist, n, create):
         print("Added to playlist.")
     elif accepted:
         print("Re-run with --create to add them (answers are already saved).")
+    snapshot.save(profile, pid, fetch_tracks(sp, pid))
     learn.report_and_update(ai, profile, "suggest", events)

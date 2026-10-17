@@ -3,7 +3,7 @@ import json
 
 import anthropic
 
-from . import learn
+from . import learn, snapshot
 from .spotify import add_tracks, fetch_tracks, get_playlist_id
 
 MODEL = "claude-haiku-5-5"
@@ -70,6 +70,7 @@ def run(sp, profile, source, dest, name, threshold, create):
     print(f"{len(picked) - len(uris)} already in the playlist, skipped.")
     add_tracks(sp, pl_id, uris)
     print(f"Added {len(uris)} new tracks: https://open.spotify.com/playlist/{pl_id}")
+    snapshot.save(profile, pl_id, fetch_tracks(sp, pl_id))
     if uris:
         summary = "\n".join(f"{a} ({n}): {scores[a].get('reason', '')}" for a, n in per_artist.items())
         learn.recap(anthropic.Anthropic(), profile, "sort", summary)

@@ -4,14 +4,14 @@ import json
 
 import anthropic
 
-from . import learn
+from . import learn, snapshot
 from .prompts import ask, ask_quit_choice
 from .spotify import fetch_tracks, get_playlist_id
 
 MODEL = "claude-sonnet-5-5"
 
 
-def score_fit(client, groups, profile):
+def score_fit(client, groups, profile, context=""):
     msg = client.messages.create(
         model=MODEL,
         max_tokens=16000,
@@ -19,7 +19,9 @@ def score_fit(client, groups, profile):
         messages=[{"role": "user", "content": (
             "Score each artist 0-10 for how well they serve this playlist's specific purpose "
             "(10 = squarely on-focus, 0 = off-focus even if good music). Judge sound and "
-            "songwriting approach, not fame.\n"
+            "songwriting approach, not fame. Consider how each artist sits among the rest of the "
+            "playlist (redundant, essential, or an outlier).\n"
+            f"{context}\n"
             'Reply with only a JSON object mapping each artist name exactly as given to '
             '{"fit": int, "reason": "<10 words max>"}.\n\n'
             + json.dumps({a: len(ts) for a, ts in groups.items()})
@@ -39,6 +41,12 @@ def run(sp, profile, playlist, focus, create):
         profile.set_focus(input("What is this playlist for? (one or two sentences) "))
     print(f"Focus: {profile.focus}\n")
 
+    ch = snapshot.changes(snapshot.load(profile, pid), tracks)
+    if ch and (ch[0] or ch[1]):
+        print(f"Since the last run you added {len(ch[0])} and removed {len(ch[1])} tracks by hand; factoring that in.\n")
+    context = (snapshot.describe(ch) + "Whole playlist right now (artist, track count): "
+               + snapshot.summary(tracks) + "\n")
+
     state = profile.narrowed()
     if state["pending_cut"] and state.get("pending_playlist") not in (None, pid):
         print("Discarding pending cuts that belong to a different playlist.")
@@ -54,17 +62,17 @@ def run(sp, profile, playlist, focus, create):
         print("Every artist here has already been reviewed.")
         return
 
-    events, cut, cut_artists, finished = [], [], [], True
+    events, cut, cut_artists, finished = snapshot.events(ch), [], [], True
     sess = profile.load_session("narrow")
     if sess and sess["playlist"] == pid:
         if ask(f"Unfinished session with {len(sess['events'])} answers so far. "
                "Resume it? [y=resume/n=drop it] ", ("y", "n")) == "y":
-            events = sess["events"]
+            events = sess["events"] + events
         else:
             profile.clear_session("narrow")
     order, fits = [], {}
     if todo:
-        fits = score_fit(anthropic.Anthropic(), todo, profile)
+        fits = score_fit(anthropic.Anthropic(), todo, profile, context)
         order = sorted(todo, key=lambda a: fits.get(a, {}).get("fit", 0))
     for a in order:
         f = fits.get(a, {})
@@ -118,6 +126,7 @@ def run(sp, profile, playlist, focus, create):
         if to_cut:
             print("Saved. Re-run with --create to remove them from Spotify (no need to answer again).")
 
+    snapshot.save(profile, pid, fetch_tracks(sp, pid))
     if not finished:
         print("Session saved. Run the same command again to pick up where you left off.")
     else:
