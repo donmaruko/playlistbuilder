@@ -46,7 +46,7 @@ class Profile:
 
     def narrowed(self):
         f = self.dir / "narrowed.json"
-        base = {"kept_artists": [], "cut_artists": [], "cut_tracks": []}
+        base = {"kept_artists": [], "cut_artists": [], "cut_tracks": [], "pending_cut": [], "pending_artists": []}
         return {**base, **json.loads(f.read_text())} if f.exists() else base
 
     def save_narrowed(self, data):

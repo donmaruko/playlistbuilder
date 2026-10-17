@@ -46,18 +46,25 @@ def run(sp, profile, playlist, focus, create):
     print(f"Focus: {profile.focus}\n")
 
     state = profile.narrowed()
+    if state["pending_cut"] and state.get("pending_playlist") not in (None, pid):
+        print("Discarding pending cuts that belong to a different playlist.")
+        state["pending_cut"], state["pending_artists"] = [], []
     groups = collections.defaultdict(list)
     for t in tracks:
         groups[t["artists"][0]].append(t)
-    todo = {a: ts for a, ts in groups.items() if a not in state["kept_artists"]}
-    if not todo:
+    todo = {a: ts for a, ts in groups.items()
+            if a not in state["kept_artists"] and a not in state["pending_artists"]}
+    if state["pending_cut"]:
+        print(f"{len(state['pending_cut'])} cuts are pending from an earlier dry run.")
+    elif not todo:
         print("Every artist here has already been reviewed.")
         return
 
-    fits = score_fit(anthropic.Anthropic(), todo, profile)
-    order = sorted(todo, key=lambda a: fits.get(a, {}).get("fit", 0))
-
     events, cut, cut_artists = [], [], []
+    order, fits = [], {}
+    if todo:
+        fits = score_fit(anthropic.Anthropic(), todo, profile)
+        order = sorted(todo, key=lambda a: fits.get(a, {}).get("fit", 0))
     for a in order:
         f = fits.get(a, {})
         ts = todo[a]
@@ -85,18 +92,26 @@ def run(sp, profile, playlist, focus, create):
             events.append(f"TRACK BY TRACK {a}: kept {[t['name'] for t in kept]}, cut "
                           f"{[t['name'] for t in ts if t not in kept]}")
 
-    print(f"\n{len(cut)} tracks marked for removal.")
-    if create:
-        state["cut_artists"] += cut_artists
-        state["cut_tracks"] += [{"uri": t["uri"], "artist": t["artists"][0], "name": t["name"]} for t in cut]
-    profile.save_narrowed(state)
-    if cut and create:
-        uris = list(dict.fromkeys(t["uri"] for t in cut))
+    new = [{"uri": t["uri"], "artist": t["artists"][0], "name": t["name"]} for t in cut]
+    state["pending_cut"] = list({c["uri"]: c for c in state["pending_cut"] + new}.values())
+    state["pending_artists"] = list(dict.fromkeys(state["pending_artists"] + cut_artists))
+    state["pending_playlist"] = pid
+    print(f"\n{len(state['pending_cut'])} tracks marked for removal.")
+    to_cut = list(state["pending_cut"])
+    if to_cut and create:
+        uris = list(dict.fromkeys(c["uri"] for c in to_cut))
         for i in range(0, len(uris), 100):
             sp.playlist_remove_all_occurrences_of_items(pid, uris[i:i + 100])
+        logged = {c["uri"] for c in state["cut_tracks"]}
+        state["cut_tracks"] += [c for c in to_cut if c["uri"] not in logged]
+        state["cut_artists"] = list(dict.fromkeys(state["cut_artists"] + state["pending_artists"]))
+        state["pending_cut"], state["pending_artists"] = [], []
+        profile.save_narrowed(state)
         print(f"Removed from the playlist (logged in profiles/{profile.name}/narrowed.json so it can be undone).")
-    elif cut:
-        print("Re-run with --create to actually remove them from Spotify.")
+    else:
+        profile.save_narrowed(state)
+        if to_cut:
+            print("Saved. Re-run with --create to remove them from Spotify (no need to answer again).")
 
     if events:
         learn.report_and_update(anthropic.Anthropic(), profile, "narrow",

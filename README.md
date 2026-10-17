@@ -1,8 +1,6 @@
 # PlaylistBuilder
 
-Build and refine Spotify playlists for any taste. Each taste is a **profile** under `profiles/<name>/`
-with a `definition.md` (what the genre/vibe means) and a `feedback.json` (artists you've kept or rejected).
-Claude does the judging; your yes/no answers teach it.
+Build and refine Spotify playlists for any taste. Each taste becomes a **profile** with a file that defines what the genre/vibe means, and a feedback file of artists you've kept or rejected. Human yes/no/skip inputs teach it.
 
 ## Setup
 ```
@@ -20,3 +18,8 @@ python -m playlistbuilder narrow "Dest" --profile artrock --create              
 Playlists can be given by name or URL. Nothing is written to Spotify without `--create`.
 After `suggest` and `narrow`, a report is saved under `profiles/<name>/reports/` and the
 "learned preferences" block at the end of `definition.md` is updated.
+
+## Profiles
+Profiles are personal and gitignored, except `profiles/example/`. To start one, copy it:
+`cp -r profiles/example profiles/<name>` and edit `definition.md`, then pass `--profile <name>`.
+A profile folder holds `definition.md`, `feedback.json`, `focus.md`, `narrowed.json` and `reports/`.
