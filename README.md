@@ -28,7 +28,9 @@ python -m playlistbuilder narrow "Destination Playlist" --profile <profile>
 
 Nothing is written to Spotify unless you add `--create`. Your answers are still saved locally on a dry run, so you can review and then re-run with `--create` without answering again.
 
-After `suggest` and `narrow`, a report on what your answers say is saved under `profiles/<profile>/reports/`, and the "learned preferences" block at the end of `definition.md` is updated for future runs. Quit with `q` rather than Ctrl-C so your progress is saved.
+After you finish a `suggest` or `narrow` session, a report on what your answers say is saved under `profiles/<profile>/reports/`, and the "learned preferences" block at the end of `definition.md` is updated for future runs. `sort` saves a short snapshot of what it moved into the new playlist. Claude reads your last few reports on every run, so it should keep getting better the more you do.
+
+If you quit with `q` partway through, you can come back to the session later or end it there (the report is then just based on what you answered). Use `q` rather than Ctrl-C, since Ctrl-C doesn't save your progress.
 
 ## Profiles
 Profiles are personal and gitignored, except `profiles/example/`. To start one, copy it:
