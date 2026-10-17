@@ -3,22 +3,32 @@
 Build and refine Spotify playlists for any taste. Each taste becomes a **profile** with a file that defines what the genre/vibe means, and a feedback file of artists you've kept or rejected. Human yes/no/skip inputs teach it.
 
 ## Setup
+
+1. Create an app at the [Spotify developer dashboard](https://developer.spotify.com/dashboard) and set its redirect URI to `http://127.0.0.1:8888/callback`. While the app is in development mode, add your own Spotify account under User Management.
+2. Get an [Anthropic API key](https://console.anthropic.com). Claude does the judging, so runs cost a small amount of API usage.
+3. Install and configure:
 ```
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
-cp .env.example .env   # fill in Spotify client id/secret and ANTHROPIC_API_KEY
+cp .env.example .env   # fill in the Spotify client id/secret and ANTHROPIC_API_KEY
 ```
-Spotify app redirect URI must be `http://127.0.0.1:8888/callback`.
 
 ## Commands
+
+Run from project folder, `<profile>` will be the name of a folder until `profiles/`. Playlists are given by name or URL.
+
 ```
-python -m playlistbuilder sort "Source Playlist" --profile <profile> --into "Destination Playlist"   # dry run; add --create to write
-python -m playlistbuilder suggest "Destination Playlist" --profile <profile> --create                # new songs, learns from y/n
-python -m playlistbuilder narrow "Destination Playlist" --profile <profile> --create                 # cut off-focus songs
+python -m playlistbuilder sort "Source Playlist" --profile <profile> --into "Destination Playlist"
+python -m playlistbuilder suggest "Destination Playlist" --profile <profile>
+python -m playlistbuilder narrow "Destination Playlist" --profile <profile>
 ```
-`<profile>` is the name of a folder under `profiles/` (see Profiles below).
-Playlists can be given by name or URL. Nothing is written to Spotify without `--create`.
-After `suggest` and `narrow`, a report is saved under `profiles/<profile>/reports/` and the
-"learned preferences" block at the end of `definition.md` is updated.
+
+- **`sort`** scores each artist in the source playlist against the profile and lists the ones that fit (`--threshold`, default 6). Omit `--into` to create a new playlist instead (`--name` sets its name).
+- **`suggest`** has Claude study the destination playlist, print what it sees, then propose new songs from general music knowledge (`-n` sets how many). Each one is checked against Spotify before you see it. Answer **y** (add the song, keep the artist), **n** (reject the artist for good), **s** (skip) or **q** (quit).
+- **`narrow`** sharpens a playlist's focus. You state what the playlist is for (once, or pass `--focus`), Claude scores every artist against that, and you keep or cut each one, or go track by track. Cuts are logged in `narrowed.json` so they can be undone.
+
+Nothing is written to Spotify unless you add `--create`. Your answers are still saved locally on a dry run, so you can review and then re-run with `--create` without answering again.
+
+After `suggest` and `narrow`, a report on what your answers say is saved under `profiles/<profile>/reports/`, and the "learned preferences" block at the end of `definition.md` is updated for future runs. Quit with `q` rather than Ctrl-C so your progress is saved.
 
 ## Profiles
 Profiles are personal and gitignored, except `profiles/example/`. To start one, copy it:
