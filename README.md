@@ -11,15 +11,16 @@ Spotify app redirect URI must be `http://127.0.0.1:8888/callback`.
 
 ## Commands
 ```
-python -m playlistbuilder sort "Source Playlist" --profile artrock --into "Dest"   # dry run; add --create to write
-python -m playlistbuilder suggest "Dest" --profile artrock --create                # new songs, learns from y/n
-python -m playlistbuilder narrow "Dest" --profile artrock --create                 # cut off-focus songs
+python -m playlistbuilder sort "Source Playlist" --profile <profile> --into "Destination Playlist"   # dry run; add --create to write
+python -m playlistbuilder suggest "Destination Playlist" --profile <profile> --create                # new songs, learns from y/n
+python -m playlistbuilder narrow "Destination Playlist" --profile <profile> --create                 # cut off-focus songs
 ```
+`<profile>` is the name of a folder under `profiles/` (see Profiles below).
 Playlists can be given by name or URL. Nothing is written to Spotify without `--create`.
-After `suggest` and `narrow`, a report is saved under `profiles/<name>/reports/` and the
+After `suggest` and `narrow`, a report is saved under `profiles/<profile>/reports/` and the
 "learned preferences" block at the end of `definition.md` is updated.
 
 ## Profiles
 Profiles are personal and gitignored, except `profiles/example/`. To start one, copy it:
-`cp -r profiles/example profiles/<name>` and edit `definition.md`, then pass `--profile <name>`.
+`cp -r profiles/example profiles/<profile>` and edit `definition.md`, then pass `--profile <profile>`.
 A profile folder holds `definition.md`, `feedback.json`, `focus.md`, `narrowed.json` and `reports/`.
