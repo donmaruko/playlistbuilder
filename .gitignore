@@ -6,3 +6,6 @@ __pycache__/
 # personal profiles stay local; only the example is tracked
 profiles/*
 !profiles/example/
+
+# local dev notes
+docs/
