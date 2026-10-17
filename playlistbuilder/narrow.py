@@ -5,6 +5,7 @@ import json
 import anthropic
 
 from . import learn
+from .prompts import ask, ask_quit_choice
 from .spotify import fetch_tracks, get_playlist_id
 
 MODEL = "claude-sonnet-5-5"
@@ -26,13 +27,6 @@ def score_fit(client, groups, profile):
     )
     text = next(b.text for b in msg.content if b.type == "text")
     return json.JSONDecoder().raw_decode(text[text.index("{"):])[0]
-
-
-def ask(prompt, choices):
-    ans = ""
-    while ans not in choices:
-        ans = input(prompt).strip().lower()
-    return ans
 
 
 def run(sp, profile, playlist, focus, create):
@@ -60,7 +54,14 @@ def run(sp, profile, playlist, focus, create):
         print("Every artist here has already been reviewed.")
         return
 
-    events, cut, cut_artists = [], [], []
+    events, cut, cut_artists, finished = [], [], [], True
+    sess = profile.load_session("narrow")
+    if sess and sess["playlist"] == pid:
+        if ask(f"Unfinished session with {len(sess['events'])} answers so far. "
+               "Resume it? [y=resume/n=drop it] ", ("y", "n")) == "y":
+            events = sess["events"]
+        else:
+            profile.clear_session("narrow")
     order, fits = [], {}
     if todo:
         fits = score_fit(anthropic.Anthropic(), todo, profile)
@@ -71,8 +72,12 @@ def run(sp, profile, playlist, focus, create):
         ans = ask(f"{a} ({len(ts)} tracks) fit {f.get('fit', '?')}/10: {f.get('reason', '')}"
                   "  [k=keep all/c=cut all/t=track by track/s=skip/q=quit] ", ("k", "c", "t", "s", "q"))
         if ans == "q":
+            finished = ask_quit_choice() == "e"
+            if not finished:
+                profile.save_session("narrow", {"playlist": pid, "events": events})
             break
         if ans == "s":
+            events.append(f"SKIPPED (undecided): {a} ({len(ts)} tracks, model fit {f.get('fit')})")
             continue
         if ans == "k":
             state["kept_artists"].append(a)
@@ -113,6 +118,10 @@ def run(sp, profile, playlist, focus, create):
         if to_cut:
             print("Saved. Re-run with --create to remove them from Spotify (no need to answer again).")
 
-    if events:
-        learn.report_and_update(anthropic.Anthropic(), profile, "narrow",
-                                [f"PLAYLIST FOCUS: {profile.focus}"] + events)
+    if not finished:
+        print("Session saved. Run the same command again to pick up where you left off.")
+    else:
+        profile.clear_session("narrow")
+        if events:
+            learn.report_and_update(anthropic.Anthropic(), profile, "narrow",
+                                    [f"PLAYLIST FOCUS: {profile.focus}"] + events)

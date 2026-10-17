@@ -5,6 +5,7 @@ import json
 import anthropic
 
 from . import learn
+from .prompts import ask, ask_quit_choice
 from .spotify import add_tracks, fetch_tracks, get_playlist_id
 
 MODEL = "claude-sonnet-5-5"
@@ -67,23 +68,39 @@ def run(sp, profile, playlist, n, create):
     existing = fetch_tracks(sp, pid)
     have_uris = {t["uri"] for t in existing}
     have_artists = {a.lower() for t in existing for a in t["artists"]}
-
     ai = anthropic.Anthropic()
-    analysis = analyze(ai, existing, profile)
-    print(f"What I see in the playlist:\n{analysis}\n")
 
-    accepted, events = [], []
-    for s in propose(ai, existing, profile, n, analysis):
+    sess = profile.load_session("suggest")
+    if sess and sess["playlist"] == pid:
+        if ask(f"Unfinished session: {len(sess['queue'])} suggestions left, {len(sess['events'])} answered. "
+               "Resume it? [y=resume/n=drop it and start fresh] ", ("y", "n")) == "y":
+            queue, events, accepted = sess["queue"], sess["events"], sess["accepted"]
+            print(f"What I saw in the playlist:\n{sess['analysis']}\n")
+        else:
+            profile.clear_session("suggest")
+            sess = None
+    else:
+        sess = None
+    if not sess:
+        analysis = analyze(ai, existing, profile)
+        print(f"What I see in the playlist:\n{analysis}\n")
+        queue, events, accepted = propose(ai, existing, profile, n, analysis), [], []
+    else:
+        analysis = sess["analysis"]
+
+    finished = True
+    while queue:
+        s = queue.pop(0)
         a = s["artist"]
         if a.lower() in have_artists | profile.decided():
             continue
         t = find_on_spotify(sp, a, s["track"])
         if not t or t["uri"] in have_uris:
             continue
-        ans = ""
-        while ans not in ("y", "n", "s", "q"):
-            ans = input(f"{a} - {t['name']}  ({s['why']})  [y/n/s=skip/q=quit] ").strip().lower()
+        ans = ask(f"{a} - {t['name']}  ({s['why']})  [y/n/s=skip/q=quit] ", ("y", "n", "s", "q"))
         if ans == "q":
+            queue.insert(0, s)
+            finished = ask_quit_choice() == "e"
             break
         if ans == "y":
             profile.keep.append(a)
@@ -92,13 +109,21 @@ def run(sp, profile, playlist, n, create):
         elif ans == "n":
             profile.omit.append(a)
             events.append(f"REJECTED: {a} - {t['name']} ({s['why']})")
+        else:
+            events.append(f"SKIPPED (undecided): {a} - {t['name']} ({s['why']})")
         profile.save()
 
+    if not finished:
+        profile.save_session("suggest", {"playlist": pid, "queue": queue, "events": events,
+                                         "accepted": accepted, "analysis": analysis})
+        print("Session saved. Run the same command again to pick up where you left off.")
+        return
+
+    profile.clear_session("suggest")
     print(f"\n{len(accepted)} accepted.")
     if accepted and create:
         add_tracks(sp, pid, accepted)
         print("Added to playlist.")
     elif accepted:
         print("Re-run with --create to add them (answers are already saved).")
-
     learn.report_and_update(ai, profile, "suggest", events)
