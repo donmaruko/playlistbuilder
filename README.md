@@ -24,3 +24,7 @@ After `suggest` and `narrow`, a report is saved under `profiles/<profile>/report
 Profiles are personal and gitignored, except `profiles/example/`. To start one, copy it:
 `cp -r profiles/example profiles/<profile>` and edit `definition.md`, then pass `--profile <profile>`.
 A profile folder holds `definition.md`, `feedback.json`, `focus.md`, `narrowed.json` and `reports/`.
+
+### Personal notes
+
+I spent a while using this program to curate my playlist, trimming it down from a few hundred songs to <80, it's really rewarding especially with the feedback the LLM generates for you. For each song it recommends you, I'd recommend listening before you answer, remember that the quality of your LLM should improve as you answer more, just remember that inputting 'q' saves everything even when you stop midway. I'm saying all of this because I want to respect your time by warning you about the potential time sink.
